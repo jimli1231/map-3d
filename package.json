@@ -10,13 +10,16 @@
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
+    "@googlemaps/js-api-loader": "^1.16.6",
     "@modelcontextprotocol/sdk": "^1.11.4",
-    "zod": "^3.25.7",
+    "@pixiv/three-vrm": "^3.4.2",
+    "@types/three": "^0.179.0",
     "highlight.js": "^11.11.1",
     "lit": "^3.3.0",
     "marked": "^15.0.12",
     "marked-highlight": "^2.2.1",
-    "@googlemaps/js-api-loader": "^1.16.6"
+    "three": "^0.179.1",
+    "zod": "^3.25.7"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

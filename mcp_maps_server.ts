@@ -24,6 +24,7 @@ export interface MapParams {
   location?: string;
   origin?: string;
   destination?: string;
+  vrmDestination?: string;
 }
 
 export async function startMcpGoogleMapServer(
@@ -64,6 +65,20 @@ export async function startMcpGoogleMapServer(
       return {
         content: [
           {type: 'text', text: `Navigating from ${origin} to ${destination}`},
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    'move_vrm_to_location',
+    'Moves the VRM character on the map to a specified destination.',
+    {destination: z.string()},
+    async ({destination}) => {
+      mapQueryHandler({vrmDestination: destination});
+      return {
+        content: [
+          {type: 'text', text: `Moving VRM character to ${destination}`},
         ],
       };
     },

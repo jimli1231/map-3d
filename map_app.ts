@@ -26,8 +26,156 @@ import {customElement, query, state} from 'lit/decorators.js';
 import {classMap} from 'lit/directives/class-map.js';
 import {Marked} from 'marked';
 import {markedHighlight} from 'marked-highlight';
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {VRM, VRMLoaderPlugin} from '@pixiv/three-vrm';
 
 import {MapParams} from './mcp_maps_server';
+
+let WebGLOverlayView: any;
+
+/**
+ * ThreeJSOverlay enhances Google Maps by rendering a 3D model (VRM) on top of the map.
+ * It uses a WebGLOverlayView to integrate a Three.js scene with the map's WebGL context.
+ */
+class ThreeJSOverlay {
+  private vrm?: VRM;
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private renderer?: THREE.WebGLRenderer;
+  private overlay: any; // Instance of google.maps.WebGLOverlayView
+  private loader: GLTFLoader;
+  private clock = new THREE.Clock();
+  private animationPath: any[] = [];
+  private animationIndex = 0;
+  private animationProgress = 0;
+  private isAnimating = false;
+
+  constructor(private map: any) {
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera();
+    this.loader = new GLTFLoader();
+    this.loader.register(parser => new VRMLoaderPlugin(parser));
+
+    // Instantiate the WebGLOverlayView
+    this.overlay = new WebGLOverlayView();
+    this.overlay.onAdd = this.onAdd.bind(this);
+    this.overlay.onContextRestored = this.onContextRestored.bind(this);
+    this.overlay.onDraw = this.onDraw.bind(this);
+    this.overlay.onStateUpdate = this.onStateUpdate.bind(this);
+    this.overlay.setMap(map);
+  }
+
+  private onAdd() {
+    // Add ambient and directional lighting to the scene
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+    this.scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    directionalLight.position.set(0.5, 1, 0.5);
+    this.scene.add(directionalLight);
+
+    // Load the VRM model
+    this.loadVRM();
+  }
+
+  private onContextRestored({gl}: {gl: WebGLRenderingContext}) {
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: gl.canvas,
+      context: gl,
+      ...{useLegacyLights: false},
+    });
+    this.renderer.autoClear = false;
+  }
+
+  private onDraw({gl, transformer}: {gl: WebGLRenderingContext, transformer: any}) {
+    if (!this.renderer) return;
+
+    const deltaTime = this.clock.getDelta();
+    if (this.vrm) {
+      this.vrm.update(deltaTime);
+    }
+
+    if (this.isAnimating && this.vrm) {
+      this.updateAnimation(transformer);
+    }
+
+    // Update camera projection matrix from map
+    const matrix = transformer.fromLatLngAltitude(this.map.center, {
+      altitude: this.map.zoom * 100, // Example altitude adjustment
+    });
+    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix);
+
+    this.overlay.requestRedraw();
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.resetState();
+  }
+
+  private onStateUpdate(state: any) {
+    // Potentially handle state updates if needed
+  }
+
+  public startMovement(path: any[]) {
+    if (path.length < 2) return;
+    this.animationPath = path;
+    this.animationIndex = 0;
+    this.animationProgress = 0;
+    this.isAnimating = true;
+  }
+
+  private updateAnimation(transformer: any) {
+    if (!this.vrm || this.animationPath.length < 2) {
+      this.isAnimating = false;
+      return;
+    }
+
+    const speed = 10; // Adjust speed as needed
+    this.animationProgress += speed / 1000;
+
+    if (this.animationProgress >= 1) {
+      this.animationIndex++;
+      this.animationProgress = 0;
+      if (this.animationIndex >= this.animationPath.length - 1) {
+        this.isAnimating = false;
+        return;
+      }
+    }
+
+    const currentPoint = this.animationPath[this.animationIndex];
+    const nextPoint = this.animationPath[this.animationIndex + 1];
+
+    const currentPos = transformer.fromLatLngAltitude(currentPoint);
+    const nextPos = transformer.fromLatLngAltitude(nextPoint);
+
+    const x = currentPos[12] + (nextPos[12] - currentPos[12]) * this.animationProgress;
+    const y = currentPos[13] + (nextPos[13] - currentPos[13]) * this.animationProgress;
+    const z = currentPos[14] + (nextPos[14] - currentPos[14]) * this.animationProgress;
+
+    this.vrm.scene.position.set(x, y, z);
+
+    const direction = new THREE.Vector3().subVectors(
+      new THREE.Vector3(nextPos[12], nextPos[13], nextPos[14]),
+      new THREE.Vector3(currentPos[12], currentPos[13], currentPos[14])
+    ).normalize();
+
+    this.vrm.scene.lookAt(this.vrm.scene.position.clone().add(direction));
+  }
+
+  private async loadVRM() {
+    try {
+      const gltf = await this.loader.loadAsync('assets/model.vrm');
+      this.vrm = gltf.userData.vrm;
+      if (this.vrm) {
+        // Position and scale the model as needed
+        this.vrm.scene.position.set(0, 0, 0);
+        this.vrm.scene.scale.set(50, 50, 50);
+        this.scene.add(this.vrm.scene);
+      }
+    } catch (error) {
+      console.error('Error loading VRM model:', error);
+    }
+  }
+}
+
 
 /** Markdown formatting function with syntax hilighting */
 export const marked = new Marked(
@@ -142,6 +290,9 @@ export class MapApp extends LitElement {
   private originMarker?: any;
   private destinationMarker?: any;
 
+  // Three.js overlay for rendering the VRM model.
+  private threeJSOverlay?: ThreeJSOverlay;
+
   sendMessageHandler?: CallableFunction;
 
   constructor() {
@@ -208,6 +359,7 @@ You can find this constant near the top of the map_app.ts file.`;
       this.Map3DElement = maps3dLibrary.Map3DElement;
       this.Marker3DElement = maps3dLibrary.Marker3DElement;
       this.Polyline3DElement = maps3dLibrary.Polyline3DElement;
+      WebGLOverlayView = maps3dLibrary.WebGLOverlayView;
 
       if ((window as any).google && (window as any).google.maps) {
         // Google Maps: Initialize the DirectionsService.
@@ -248,6 +400,7 @@ You can find this constant near the top of the map_app.ts file.`;
     } else {
       console.error('Geocoder not loaded.');
     }
+    this.threeJSOverlay = new ThreeJSOverlay(this.map);
   }
 
   setChatState(state: ChatState) {
@@ -521,10 +674,45 @@ You can find this constant near the top of the map_app.ts file.`;
       this._handleViewLocation(params.location);
     } else if (params.origin && params.destination) {
       this._handleDirections(params.origin, params.destination);
+    } else if (params.vrmDestination) {
+      this._handleMoveVrm(params.vrmDestination);
     } else if (params.destination) {
       // Fallback if only destination is provided, treat as viewing a location
       this._handleViewLocation(params.destination);
     }
+  }
+
+  /**
+   * Handles moving the VRM model to a specific destination.
+   * It uses the DirectionsService to find a route and then passes the path
+   * to the ThreeJSOverlay to animate the model.
+   * @param destinationQuery The destination for the VRM model.
+   */
+  private async _handleMoveVrm(destinationQuery: string) {
+    if (!this.mapInitialized || !this.directionsService || !this.threeJSOverlay) {
+      console.warn('Map or services not ready for VRM movement.');
+      return;
+    }
+
+    // For simplicity, let's assume the origin is the current map center.
+    const origin = this.map.center;
+
+    this.directionsService.route(
+      {
+        origin: origin,
+        destination: destinationQuery,
+        travelMode: (window as any).google.maps.TravelMode.WALKING,
+      },
+      (response: any, status: string) => {
+        if (status === 'OK' && response.routes && response.routes.length > 0) {
+          const route = response.routes[0];
+          const path = route.overview_path;
+          this.threeJSOverlay.startMovement(path);
+        } else {
+          console.error(`VRM Directions request failed. Status: ${status}`);
+        }
+      },
+    );
   }
 
   setInputField(message: string) {
