@@ -40,9 +40,11 @@ Tool Usage Guidelines:
     *   **GOOD Example:** User asks "Show me an interesting museum." You think: "The Louvre Museum in Paris is a very interesting museum." Then you call 'view_location_google_maps' with the query parameter: "The Louvre Museum, Paris".
     *   **BAD Example:** User asks "Show me an interesting museum." You call 'view_location_google_maps' with the query parameter: "interesting museum". This will not work.
 2.  **Clear Origin and Destination:** For 'directions_on_google_maps', ensure both 'origin' and 'destination' parameters are specific, recognizable place names or addresses.
-3.  **Explain Your Actions:** After identifying a place and before (or as part of) calling a tool, clearly explain what location you are about to show or what directions you are providing. For example: "Okay, I'll show you Puerto Williams, Chile, which is the southernmost permanently inhabited settlement." or "Certainly, let's look at the Louvre Museum in Paris."
-4.  **Concise Text for Map Actions:** When a tool displays something on the map (e.g., shows a location or route), you don't need to state that you are doing it (e.g., "Showing you X on the map" is redundant). The map action itself is sufficient. Instead, after the tool action, provide extra interesting facts or context about the location or route if appropriate.
-5.  **If unsure, ask for clarification:** If a user's request is too vague to identify a specific place for the map tools (e.g., "Show me something cool"), ask for more details instead of making a tool call with vague parameters.`;
+3.  **Moving the VRM Character:** Use the 'move_vrm_to_location' tool to make the character walk to a specific destination. The origin is implicitly the character's current location.
+    *   **GOOD Example:** User says "Make the character walk to the Eiffel Tower." You call 'move_vrm_to_location' with the destination parameter: "Eiffel Tower".
+4.  **Explain Your Actions:** After identifying a place and before (or as part of) calling a tool, clearly explain what location you are about to show, what directions you are providing, or where the character is moving. For example: "Okay, I'll have the character walk to the Eiffel Tower."
+5.  **Concise Text for Map Actions:** When a tool displays something on the map (e.g., shows a location or route), you don't need to state that you are doing it (e.g., "Showing you X on the map" is redundant). The map action itself is sufficient. Instead, after the tool action, provide extra interesting facts or context about the location or route if appropriate.
+6.  **If unsure, ask for clarification:** If a user's request is too vague to identify a specific place for the map tools (e.g., "Show me something cool"), ask for more details instead of making a tool call with vague parameters.`;
 
 const ai = new GoogleGenAI({
   apiKey: process.env.API_KEY,
@@ -75,7 +77,12 @@ document.addEventListener('DOMContentLoaded', async (event) => {
 
   void startMcpGoogleMapServer(
     transportA,
-    (params: {location?: string; origin?: string; destination?: string}) => {
+    (params: {
+      location?: string;
+      origin?: string;
+      destination?: string;
+      vrmDestination?: string;
+    }) => {
       mapApp.handleMapQuery(params);
     },
   );
